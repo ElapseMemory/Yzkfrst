@@ -1,0 +1,21 @@
+import requests
+
+url = "https://v1.reecho.ai/api/tts/generate" 
+
+headers = {
+  "Authorization": "Bearer <your_access_token>" 
+}
+
+data = {
+  "type": "reecho-neural-voice-001",
+  "contents": [
+    {
+      "text": "欢迎使用睿声,这里是异步语音生成示例",
+      "voiceId": "your_voice_id" 
+    }
+  ]
+}
+
+response = requests.post(url, headers=headers, json=data)
+
+print(response.text)
