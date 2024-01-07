@@ -1,0 +1,50 @@
+{
+    "status": 200, //状态码
+    "message": "OK", //状态信息
+    "data": { //详细数据
+        "id": "9dd3b6fa-128f-4d13-b9bb-94ccbc8d0292", //任务ID（重要，用于后续查询）
+        "userId": "9d784397-80cf-41b9-bc1d-4e664f37b3f1", //用户ID
+        "status": "pending", //任务状态 (请使用此项判断任务状态，pending 等待中 / processing 处理中 / generated 已完成 / failed 任务出错)
+        "type": "reecho-neural-voice-001", //模型ID
+        "metadata": { //更多详细数据
+            //总生成结果的完整音频（如有）
+            "audio": "https://r2-global.reecho-external.pro/generate/9dd3b6fa-128f-4d13-b9bb-94ccbc8d0292/9dd3b6fa-128f-4d13-b9bb-djowjoj455jo-0-nx3wt5.mp3",
+            "contents": [ //用于生成的文本列表
+                {
+                    //单句生成结果的音频（如有）
+                    "audio": "https://r2-global.reecho-external.pro/generate/9dd3b6fa-128f-4d13-b9bb-94ccbc8d0292/9dd3b6fa-128f-4d13-b9bb-djowjoj455jo-0-nx3wt5.mp3",
+                    "voiceId": "033020b2-ecbb-43cc-9c85-accba3106c87", //角色ID
+                    "text": "你好，欢迎来到睿声，修改这条文本或在下方键入来开始声音之旅吧！", //内容文本
+                    "generatedAt": "2023-11-12T07:05:32.044Z", //单句生成完毕的时间（如有）
+                    "tokens": 514 //单句生成结果所消耗的Token数量（仅作内部统计，计费按照字符数计算）
+                }
+            ],
+            "generatedAt": "2023-11-12T07:05:32.044Z", //最终结果生成完毕的时间（如有）
+            "tokens": 514 //最终生成结果所消耗的Token数量（仅作内部统计，计费按照字符数计算）
+            "characters": 31, //本次任务的总字符数
+            "voices": [ //本次任务所使用的语音角色列表
+                {
+                    "id": "033020b2-ecbb-43cc-9c85-accba3106c87", //角色ID
+                    "name": "test", //角色名称
+                    "status": "pending", //角色状态 (目前无作用)
+                    "from": "upload", //角色来源 (upload 用户自行克隆 / library 来自声音市场)
+                    "originId": null, //声音市场中的ID (如有)
+                    "metadata": { //角色详细数据
+                        //角色预览音频文件链接
+                        "promptMP3StorageUrl": "https://r2-global.reecho-external.pro/prompt/9d784397-80cf-41b9-bc1d-4e6e4f37b3f1/15b0f3e4-80ff-11ee-bd25-wdfhiw2433.mp3",
+                        "description": "" //角色描述文本
+                    },
+                    "createdAt": "2023-11-12T01:59:18.182Z", //角色创建时间
+                    "updatedAt": "2023-11-12T01:59:18.182Z", //角色更新时间
+                    "deletedAt": null, //角色删除时间
+                    "userId": "9d784397-80cf-41b9-bc1d-4e6e4f37b3f1" //角色创建者ID
+                }
+            ],
+            "temperature": 0.97, //随机性除以100
+            "top_k": 40 //稳定性增强
+        },
+        "createdAt": "2023-11-12T07:05:25.525Z", //任务创建时间
+        "updatedAt": "2023-11-12T07:05:25.525Z", //任务更新时间
+        "deletedAt": null //任务删除时间
+    }
+}
