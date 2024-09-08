@@ -1,21 +1,58 @@
-import requests
-
-url = "https://v1.reecho.ai/api/tts/generate" 
-
-headers = {
-  "Authorization": "Bearer <your_access_token>" 
+export interface ApifoxModel {
+    /**
+     * 增强文本情感（实验性，默认为true）
+     */
+    break_clone?: boolean;
+    /**
+     * 低延迟模式（默认为false）
+     */
+    flash?: boolean;
+    /**
+     * [已弃用]要使用的模型ID (目前默认统一为reecho-neural-voice-001)
+     */
+    model?: Model;
+    /**
+     * 概率优选（0-100，默认为93）
+     */
+    probability_optimization?: number;
+    /**
+     * 角色风格 ID（默认为default)
+     */
+    promptId?: string;
+    /**
+     * 多样性 (0-100，默认为98)
+     */
+    randomness?: number;
+    /**
+     * 生成种子，最大为Int32，-1或null时为随机（默认为-1）
+     */
+    seed?: number | null;
+    /**
+     * 音质增强（实验性，默认为false）
+     */
+    sharpen?: boolean;
+    /**
+     * 稳定性过滤 (0-1024，默认为256)
+     */
+    stability_boost?: number;
+    /**
+     * 要生成的文本内容
+     */
+    text: string;
+    /**
+     * API Key(该接口可通过该参数传递API Key以在简单请求中使用)
+     */
+    token: string;
+    /**
+     * 语音角色 ID
+     */
+    voiceId: string;
+    [property: string]: any;
 }
 
-data = {
-  "type": "reecho-neural-voice-001",
-  "contents": [
-    {
-      "text": "欢迎使用睿声,这里是异步语音生成示例",
-      "voiceId": "your_voice_id" 
-    }
-  ]
+/**
+ * [已弃用]要使用的模型ID (目前默认统一为reecho-neural-voice-001)
+ */
+export enum Model {
+    ReechoNeuralVoice001 = "reecho-neural-voice-001",
 }
-
-response = requests.post(url, headers=headers, json=data)
-
-print(response.text)
