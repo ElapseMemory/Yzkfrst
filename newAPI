@@ -1,0 +1,45 @@
+{
+    "status": 200,
+    "message": "OK",
+    "data": {
+        "id": "string",
+        "name": "string",
+        "status": "pending",
+        "metadata": {
+            "avatar": "string",
+            "description": "string",
+            "prompts": [
+                {
+                    "id": "string",
+                    "name": "string",
+                    "promptOriginAudioStorageUrl": "string"
+                }
+            ],
+            "preProcess": true
+        }
+    }
+}
+
+
+{
+    "voiceId": "string",
+    "text": "string",
+    "texts": [
+        "string"
+    ],
+    "promptId": "default",
+    "randomness": 98,
+    "stability_boost": 256,
+    "probability_optimization": 93,
+    "break_clone": true,
+    "sharpen": false,
+    "flash": false,
+    "stream": false,
+    "srt": false,
+    "seed": -1,
+    "dictionary": [
+        {}
+    ],
+    "model": "reecho-neural-voice-001",
+    "origin_audio": false
+}
