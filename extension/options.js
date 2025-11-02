@@ -8,6 +8,18 @@ const promptTemplateInput = document.getElementById('prompt-template');
 const requestBodyTemplateInput = document.getElementById('request-body-template');
 const customHeadersInput = document.getElementById('custom-headers');
 const responsePathInput = document.getElementById('response-path');
+const detectionModeSelect = document.getElementById('detection-mode');
+const detectionEndpointInput = document.getElementById('detection-endpoint');
+const detectionRequestMethodSelect = document.getElementById('detection-request-method');
+const detectionPromptTemplateInput = document.getElementById('detection-prompt-template');
+const detectionRequestBodyTemplateInput = document.getElementById('detection-request-body-template');
+const detectionCustomHeadersInput = document.getElementById('detection-custom-headers');
+const detectionResponsePathInput = document.getElementById('detection-response-path');
+const enablePageTranslationInput = document.getElementById('enable-page-translation');
+const autoDetectPageLanguageInput = document.getElementById('auto-detect-page-language');
+const autoShowFloatingPanelInput = document.getElementById('auto-show-floating-panel');
+const pageTranslationBatchSizeInput = document.getElementById('page-translation-batch-size');
+const detectionTemplateFields = document.querySelectorAll('[data-detection-template]');
 const statusBox = document.getElementById('status');
 
 const DEFAULT_SETTINGS = {
@@ -20,7 +32,19 @@ const DEFAULT_SETTINGS = {
   requestBodyTemplate:
     '{\n  "text": "{{text}}",\n  "prompt": "{{prompt}}",\n  "sourceLanguage": "{{sourceLanguage}}",\n  "targetLanguage": "{{targetLanguage}}"\n}',
   customHeaders: '{\n  "Authorization": "Bearer {{apiKey}}"\n}',
-  responsePath: 'translation'
+  responsePath: 'translation',
+  detectionMode: 'simple',
+  detectionEndpoint: '',
+  detectionRequestMethod: 'POST',
+  detectionPromptTemplate:
+    '请判断以下文本的语言并仅返回语言代码（如 en、zh-CN）：\n\n{{text}}',
+  detectionRequestBodyTemplate: '{\n  "text": "{{text}}",\n  "prompt": "{{prompt}}"\n}',
+  detectionCustomHeaders: '{}',
+  detectionResponsePath: '',
+  enablePageTranslation: true,
+  autoDetectPageLanguage: true,
+  autoShowFloatingPanel: true,
+  pageTranslationBatchSize: 8
 };
 
 async function restoreOptions() {
@@ -36,10 +60,31 @@ async function restoreOptions() {
   requestBodyTemplateInput.value = merged.requestBodyTemplate;
   customHeadersInput.value = merged.customHeaders;
   responsePathInput.value = merged.responsePath;
+  detectionModeSelect.value = merged.detectionMode;
+  detectionEndpointInput.value = merged.detectionEndpoint || '';
+  detectionRequestMethodSelect.value = merged.detectionRequestMethod || DEFAULT_SETTINGS.detectionRequestMethod;
+  detectionPromptTemplateInput.value =
+    merged.detectionPromptTemplate || DEFAULT_SETTINGS.detectionPromptTemplate;
+  detectionRequestBodyTemplateInput.value =
+    merged.detectionRequestBodyTemplate || DEFAULT_SETTINGS.detectionRequestBodyTemplate;
+  detectionCustomHeadersInput.value = merged.detectionCustomHeaders || '{}';
+  detectionResponsePathInput.value = merged.detectionResponsePath || '';
+  enablePageTranslationInput.checked = Boolean(merged.enablePageTranslation);
+  autoDetectPageLanguageInput.checked = Boolean(merged.autoDetectPageLanguage);
+  autoShowFloatingPanelInput.checked = Boolean(merged.autoShowFloatingPanel);
+  pageTranslationBatchSizeInput.value =
+    merged.pageTranslationBatchSize || DEFAULT_SETTINGS.pageTranslationBatchSize;
+
+  syncDetectionTemplateVisibility();
 }
 
 async function saveOptions(event) {
   event.preventDefault();
+
+  const batchSizeValue = Number(pageTranslationBatchSizeInput.value);
+  const batchSize = Number.isFinite(batchSizeValue)
+    ? Math.min(30, Math.max(1, Math.round(batchSizeValue)))
+    : DEFAULT_SETTINGS.pageTranslationBatchSize;
 
   const settings = {
     endpoint: endpointInput.value.trim(),
@@ -51,7 +96,21 @@ async function saveOptions(event) {
     requestBodyTemplate:
       requestBodyTemplateInput.value.trim() || DEFAULT_SETTINGS.requestBodyTemplate,
     customHeaders: customHeadersInput.value.trim() || '{}',
-    responsePath: responsePathInput.value.trim() || DEFAULT_SETTINGS.responsePath
+    responsePath: responsePathInput.value.trim() || DEFAULT_SETTINGS.responsePath,
+    detectionMode: detectionModeSelect.value,
+    detectionEndpoint: detectionEndpointInput.value.trim(),
+    detectionRequestMethod: detectionRequestMethodSelect.value,
+    detectionPromptTemplate:
+      detectionPromptTemplateInput.value.trim() || DEFAULT_SETTINGS.detectionPromptTemplate,
+    detectionRequestBodyTemplate:
+      detectionRequestBodyTemplateInput.value.trim() ||
+      DEFAULT_SETTINGS.detectionRequestBodyTemplate,
+    detectionCustomHeaders: detectionCustomHeadersInput.value.trim() || '{}',
+    detectionResponsePath: detectionResponsePathInput.value.trim(),
+    enablePageTranslation: enablePageTranslationInput.checked,
+    autoDetectPageLanguage: autoDetectPageLanguageInput.checked,
+    autoShowFloatingPanel: autoShowFloatingPanelInput.checked,
+    pageTranslationBatchSize: batchSize
   };
 
   await chrome.storage.sync.set({ settings });
@@ -66,5 +125,14 @@ async function saveOptions(event) {
 }
 
 form.addEventListener('submit', saveOptions);
+
+function syncDetectionTemplateVisibility() {
+  const shouldShow = detectionModeSelect.value === 'llm';
+  detectionTemplateFields.forEach((field) => {
+    field.hidden = !shouldShow;
+  });
+}
+
+detectionModeSelect.addEventListener('change', syncDetectionTemplateVisibility);
 
 document.addEventListener('DOMContentLoaded', restoreOptions);

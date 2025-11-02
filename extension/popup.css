@@ -64,6 +64,19 @@ button:hover {
   box-shadow: 0 12px 24px rgba(14, 165, 233, 0.35);
 }
 
+button.secondary {
+  margin-top: 8px;
+  background: transparent;
+  color: #38bdf8;
+  border: 1px solid rgba(56, 189, 248, 0.6);
+  box-shadow: none;
+}
+
+button.secondary:hover {
+  background: rgba(56, 189, 248, 0.12);
+  box-shadow: none;
+}
+
 #result {
   background: #1f2937;
   border-radius: 10px;

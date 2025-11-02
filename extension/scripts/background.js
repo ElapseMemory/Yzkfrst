@@ -8,7 +8,20 @@ const DEFAULT_SETTINGS = {
   requestBodyTemplate:
     '{\n  "text": "{{text}}",\n  "prompt": "{{prompt}}",\n  "sourceLanguage": "{{sourceLanguage}}",\n  "targetLanguage": "{{targetLanguage}}"\n}',
   customHeaders: '{\n  "Authorization": "Bearer {{apiKey}}"\n}',
-  responsePath: 'translation'
+  responsePath: 'translation',
+  detectionMode: 'simple',
+  detectionEndpoint: '',
+  detectionRequestMethod: 'POST',
+  detectionPromptTemplate:
+    '请判断以下文本的语言并仅返回语言代码（如 en、zh-CN）：\n\n{{text}}',
+  detectionRequestBodyTemplate:
+    '{\n  "text": "{{text}}",\n  "prompt": "{{prompt}}"\n}',
+  detectionCustomHeaders: '{}',
+  detectionResponsePath: '',
+  enablePageTranslation: true,
+  autoDetectPageLanguage: true,
+  autoShowFloatingPanel: true,
+  pageTranslationBatchSize: 8
 };
 
 chrome.runtime.onInstalled.addListener(async () => {
@@ -42,7 +55,27 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         console.error('Translation failed', error);
         sendResponse({ success: false, error: error.message });
       });
-    return true; // Keep the message channel open for async response.
+    return true;
+  }
+
+  if (message?.type === 'translate-text-batch') {
+    handleBatchTranslationRequest(message.payload)
+      .then(sendResponse)
+      .catch((error) => {
+        console.error('Batch translation failed', error);
+        sendResponse({ success: false, error: error.message });
+      });
+    return true;
+  }
+
+  if (message?.type === 'detect-language') {
+    handleDetectionRequest(message.payload)
+      .then(sendResponse)
+      .catch((error) => {
+        console.error('Language detection failed', error);
+        sendResponse({ success: false, error: error.message });
+      });
+    return true;
   }
 });
 
@@ -52,29 +85,139 @@ async function handleTranslationRequest(payload) {
     return { success: false, error: '没有可翻译的文本。' };
   }
 
-  const { settings } = await chrome.storage.sync.get('settings');
-  const mergedSettings = { ...DEFAULT_SETTINGS, ...settings };
-  const {
-    endpoint,
-    apiKey,
-    requestMethod,
-    promptTemplate,
-    requestBodyTemplate,
-    customHeaders,
-    responsePath
-  } = mergedSettings;
+  const mergedSettings = await loadMergedSettings();
 
-  if (!endpoint) {
-    return { success: false, error: '请先在扩展设置中配置翻译服务端点。' };
-  }
+  const resolvedSourceLanguage =
+    sourceLanguage || mergedSettings.sourceLanguage || DEFAULT_SETTINGS.sourceLanguage;
+  const resolvedTargetLanguage =
+    targetLanguage || mergedSettings.targetLanguage || DEFAULT_SETTINGS.targetLanguage;
 
-  const resolvedSourceLanguage = sourceLanguage || mergedSettings.sourceLanguage || DEFAULT_SETTINGS.sourceLanguage;
-  const resolvedTargetLanguage = targetLanguage || mergedSettings.targetLanguage || DEFAULT_SETTINGS.targetLanguage;
-
-  const templateVariables = {
+  const response = await executeTemplatedRequest({
     text,
     sourceLanguage: resolvedSourceLanguage,
     targetLanguage: resolvedTargetLanguage,
+    apiKey: mergedSettings.apiKey,
+    endpoint: mergedSettings.endpoint,
+    requestMethod: mergedSettings.requestMethod,
+    promptTemplate: mergedSettings.promptTemplate,
+    requestBodyTemplate: mergedSettings.requestBodyTemplate,
+    customHeaders: mergedSettings.customHeaders,
+    responsePath: mergedSettings.responsePath,
+    missingEndpointMessage: '请先在扩展设置中配置翻译服务端点。'
+  });
+
+  return {
+    success: response.success,
+    translation: response.success ? ensureString(response.value) : undefined,
+    error: response.success ? undefined : response.error
+  };
+}
+
+async function handleBatchTranslationRequest(payload = {}) {
+  const { texts, targetLanguage, sourceLanguage } = payload;
+  if (!Array.isArray(texts) || texts.length === 0) {
+    return { success: false, error: '没有需要翻译的文本。' };
+  }
+
+  const mergedSettings = await loadMergedSettings();
+
+  const resolvedSourceLanguage =
+    sourceLanguage || mergedSettings.sourceLanguage || DEFAULT_SETTINGS.sourceLanguage;
+  const resolvedTargetLanguage =
+    targetLanguage || mergedSettings.targetLanguage || DEFAULT_SETTINGS.targetLanguage;
+
+  const results = [];
+  for (const text of texts) {
+    const response = await executeTemplatedRequest({
+      text,
+      sourceLanguage: resolvedSourceLanguage,
+      targetLanguage: resolvedTargetLanguage,
+      apiKey: mergedSettings.apiKey,
+      endpoint: mergedSettings.endpoint,
+      requestMethod: mergedSettings.requestMethod,
+      promptTemplate: mergedSettings.promptTemplate,
+      requestBodyTemplate: mergedSettings.requestBodyTemplate,
+      customHeaders: mergedSettings.customHeaders,
+      responsePath: mergedSettings.responsePath,
+      missingEndpointMessage: '请先在扩展设置中配置翻译服务端点。'
+    });
+
+    if (!response.success) {
+      return response;
+    }
+
+    results.push(ensureString(response.value));
+  }
+
+  return { success: true, translations: results };
+}
+
+async function handleDetectionRequest(payload = {}) {
+  const { text } = payload;
+  if (!text?.trim()) {
+    return { success: false, error: '没有可分析的文本。' };
+  }
+
+  const mergedSettings = await loadMergedSettings();
+
+  const endpoint = (mergedSettings.detectionEndpoint || mergedSettings.endpoint || '').trim();
+  if (!endpoint) {
+    return { success: false, error: '尚未配置语言识别接口，请在设置中填写。' };
+  }
+
+  const response = await executeTemplatedRequest({
+    text,
+    sourceLanguage: mergedSettings.sourceLanguage || DEFAULT_SETTINGS.sourceLanguage,
+    targetLanguage: mergedSettings.targetLanguage || DEFAULT_SETTINGS.targetLanguage,
+    apiKey: mergedSettings.apiKey,
+    endpoint,
+    requestMethod: mergedSettings.detectionRequestMethod || mergedSettings.requestMethod,
+    promptTemplate:
+      mergedSettings.detectionPromptTemplate || DEFAULT_SETTINGS.detectionPromptTemplate,
+    requestBodyTemplate:
+      mergedSettings.detectionRequestBodyTemplate ||
+      DEFAULT_SETTINGS.detectionRequestBodyTemplate,
+    customHeaders:
+      mergedSettings.detectionCustomHeaders?.trim()
+        ? mergedSettings.detectionCustomHeaders
+        : mergedSettings.customHeaders,
+    responsePath: mergedSettings.detectionResponsePath,
+    missingEndpointMessage: '尚未配置语言识别接口，请在设置中填写。'
+  });
+
+  if (!response.success) {
+    return response;
+  }
+
+  return { success: true, language: ensureString(response.value).trim() };
+}
+
+async function loadMergedSettings() {
+  const { settings } = await chrome.storage.sync.get('settings');
+  return { ...DEFAULT_SETTINGS, ...settings };
+}
+
+async function executeTemplatedRequest({
+  text,
+  sourceLanguage,
+  targetLanguage,
+  apiKey,
+  endpoint,
+  requestMethod,
+  promptTemplate,
+  requestBodyTemplate,
+  customHeaders,
+  responsePath,
+  missingEndpointMessage
+}) {
+  if (!endpoint) {
+    return { success: false, error: missingEndpointMessage || '未配置接口端点。' };
+  }
+
+  const templateVariables = {
+    text,
+    sourceLanguage,
+    targetLanguage,
     apiKey: apiKey || ''
   };
 
@@ -83,7 +226,7 @@ async function handleTranslationRequest(payload) {
 
   let requestBody;
   try {
-    const requestBodyString = renderTemplate(requestBodyTemplate, templateVariables);
+    const requestBodyString = renderTemplate(requestBodyTemplate, templateVariables) || '{}';
     requestBody = JSON.parse(requestBodyString);
   } catch (error) {
     console.error('Failed to render request body template', error);
@@ -110,8 +253,8 @@ async function handleTranslationRequest(payload) {
     headers.Authorization = `Bearer ${apiKey}`;
   }
 
+  const method = (requestMethod || 'POST').toUpperCase();
   let requestUrl = endpoint;
-  const method = (requestMethod || DEFAULT_SETTINGS.requestMethod || 'POST').toUpperCase();
   const fetchOptions = {
     method,
     headers
@@ -134,28 +277,41 @@ async function handleTranslationRequest(payload) {
 
   if (!response.ok) {
     const errorText = await response.text();
-    throw new Error(`翻译接口返回异常：${response.status} ${errorText}`);
+    throw new Error(`接口返回异常：${response.status} ${errorText}`);
   }
 
-  const data = await response.json().catch(() => ({ translation: null }));
+  const data = await response.json().catch(() => ({}));
 
-  let translation;
-  if (responsePath) {
-    translation = extractValueByPath(data, responsePath);
+  let value;
+  if (responsePath?.trim()) {
+    value = extractValueByPath(data, responsePath);
   }
 
-  if (translation === undefined || translation === null) {
-    translation = data.translation;
+  if (value === undefined || value === null) {
+    value = data.translation ?? data.result ?? data.choices?.[0]?.message?.content ?? data;
   }
 
-  if (translation === undefined || translation === null) {
-    throw new Error('未从接口返回翻译结果，请检查响应路径设置。');
+  if (value === undefined || value === null) {
+    throw new Error('未从接口返回有效结果，请检查响应路径设置。');
   }
 
-  return {
-    success: true,
-    translation: typeof translation === 'string' ? translation : JSON.stringify(translation)
-  };
+  return { success: true, value, raw: data };
+}
+
+function ensureString(value) {
+  if (typeof value === 'string') {
+    return value;
+  }
+
+  if (value === undefined || value === null) {
+    return '';
+  }
+
+  if (typeof value === 'object') {
+    return JSON.stringify(value);
+  }
+
+  return String(value);
 }
 
 function renderTemplate(template, variables) {

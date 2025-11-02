@@ -4,6 +4,7 @@ const targetLanguageInput = document.getElementById('target-language');
 const resultSection = document.getElementById('result');
 const translationOutput = document.getElementById('translation-output');
 const openOptionsButton = document.getElementById('open-options');
+const translatePageButton = document.getElementById('translate-page');
 
 async function loadSettings() {
   const { settings } = await chrome.storage.sync.get('settings');
@@ -45,5 +46,30 @@ openOptionsButton.addEventListener('click', () => {
     chrome.runtime.openOptionsPage();
   } else {
     window.open(chrome.runtime.getURL('options.html'));
+  }
+});
+
+translatePageButton.addEventListener('click', async () => {
+  translatePageButton.disabled = true;
+  const originalText = translatePageButton.textContent;
+  translatePageButton.textContent = '请求中...';
+
+  try {
+    const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+    if (!tab?.id) {
+      throw new Error('未找到当前标签页。');
+    }
+
+    await chrome.tabs.sendMessage(tab.id, { type: 'translate-entire-page' });
+
+    resultSection.hidden = false;
+    translationOutput.textContent = '已发送整页翻译请求，请在页面右下角的悬浮窗查看进度。';
+  } catch (error) {
+    const message = chrome.runtime.lastError?.message || error.message;
+    resultSection.hidden = false;
+    translationOutput.textContent = `无法触发整页翻译：${message}`;
+  } finally {
+    translatePageButton.textContent = originalText;
+    translatePageButton.disabled = false;
   }
 });

@@ -30,6 +30,22 @@ p {
   margin-bottom: 18px;
 }
 
+.field.checkbox {
+  flex-direction: row;
+  align-items: center;
+  gap: 12px;
+}
+
+.field.checkbox input[type="checkbox"] {
+  width: auto;
+  height: 18px;
+  accent-color: #38bdf8;
+}
+
+.field.checkbox span {
+  flex: 1;
+}
+
 input,
 select,
 textarea {
@@ -46,6 +62,10 @@ textarea {
   line-height: 1.5;
   resize: vertical;
   white-space: pre;
+}
+
+input[type="number"] {
+  max-width: 160px;
 }
 
 button[type="submit"] {
@@ -67,6 +87,24 @@ button[type="submit"]:hover {
 .hint {
   font-size: 13px;
   color: #94a3b8;
+}
+
+fieldset.group {
+  border: 1px solid #1f2937;
+  border-radius: 12px;
+  padding: 16px 20px;
+  margin-top: 28px;
+  background: rgba(15, 23, 42, 0.55);
+}
+
+fieldset.group legend {
+  padding: 0 10px;
+  font-weight: 600;
+  color: #f1f5f9;
+}
+
+[data-detection-template][hidden] {
+  display: none;
 }
 
 #status {

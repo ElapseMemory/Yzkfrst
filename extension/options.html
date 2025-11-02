@@ -69,6 +69,75 @@
           <input type="text" id="response-path" placeholder="translation 或 choices.0.message.content" />
           <p class="hint">使用点号语法从返回 JSON 中取值，支持数组索引（示例：<code>choices.0.message.content</code>）。</p>
         </label>
+        <fieldset class="group">
+          <legend>语言识别与整页翻译</legend>
+          <label class="field">
+            <span>语言识别模式</span>
+            <select id="detection-mode">
+              <option value="simple">自动检测（字符统计）</option>
+              <option value="llm">调用接口识别语言</option>
+              <option value="manual">手动（使用默认源语言）</option>
+            </select>
+          </label>
+          <label class="field" data-detection-template>
+            <span>语言识别接口地址（可选）</span>
+            <input type="url" id="detection-endpoint" placeholder="留空则复用翻译接口" />
+          </label>
+          <label class="field" data-detection-template>
+            <span>识别请求方法</span>
+            <select id="detection-request-method">
+              <option value="POST">POST</option>
+              <option value="GET">GET</option>
+            </select>
+          </label>
+          <label class="field" data-detection-template>
+            <span>语言识别 Prompt 模板</span>
+            <textarea
+              id="detection-prompt-template"
+              rows="4"
+              placeholder="请判断以下文本的语言并仅返回语言代码（如 en、zh-CN）：\n\n{{text}}"
+            ></textarea>
+            <p class="hint">复用变量 <code>{{text}}</code>、<code>{{sourceLanguage}}</code>、<code>{{targetLanguage}}</code> 构建识别提示词。</p>
+          </label>
+          <label class="field" data-detection-template>
+            <span>语言识别请求体模板（JSON）</span>
+            <textarea
+              id="detection-request-body-template"
+              rows="6"
+              placeholder='{"text":"{{text}}","prompt":"{{prompt}}"}'
+            ></textarea>
+          </label>
+          <label class="field" data-detection-template>
+            <span>语言识别请求头（JSON，可选）</span>
+            <textarea
+              id="detection-custom-headers"
+              rows="4"
+              placeholder='{"Authorization":"Bearer {{apiKey}}"}'
+            ></textarea>
+          </label>
+          <label class="field" data-detection-template>
+            <span>语言识别响应路径</span>
+            <input type="text" id="detection-response-path" placeholder="language 或 data.language" />
+            <p class="hint">留空时会尝试直接使用返回结果或复用翻译结果字段。</p>
+          </label>
+          <label class="field checkbox">
+            <input type="checkbox" id="enable-page-translation" />
+            <span>启用整页翻译功能</span>
+          </label>
+          <label class="field checkbox">
+            <input type="checkbox" id="auto-detect-page-language" />
+            <span>自动检测页面语言</span>
+          </label>
+          <label class="field checkbox">
+            <input type="checkbox" id="auto-show-floating-panel" />
+            <span>语言不匹配时自动显示悬浮窗菜单</span>
+          </label>
+          <label class="field">
+            <span>整页翻译批量大小</span>
+            <input type="number" id="page-translation-batch-size" min="1" max="30" />
+            <p class="hint">一次请求包含的文本块数量，数值越大并发越低但单次请求更长。</p>
+          </label>
+        </fieldset>
         <button type="submit">保存设置</button>
       </form>
       <p class="hint">设置会保存在浏览器的同步存储中，不会上传到其他地方。</p>
