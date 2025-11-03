@@ -39,6 +39,7 @@ const DEFAULT_SETTINGS = {
 const BUBBLE_ID = 'safe-page-translator-bubble';
 const PANEL_ID = 'safe-page-translator-panel';
 const PANEL_STYLE_ID = 'safe-page-translator-style';
+const SELECTION_BUBBLE_ID = 'safe-page-translator-selection';
 const TRANSLATOR_DATA_ATTRIBUTE = 'data-safe-page-translator';
 
 const originalTextMap = new WeakMap();
@@ -62,6 +63,16 @@ const floatingPanelState = {
 };
 
 const PANEL_COLLAPSE_DELAY = 5000;
+
+const selectionBubbleState = {
+  container: null,
+  translateButton: null,
+  hideTimer: null,
+  initialized: false,
+  currentSelection: ''
+};
+
+const SELECTION_BUBBLE_HIDE_DELAY = 3200;
 
 const SKIP_TAGS = new Set([
   'SCRIPT',
@@ -100,6 +111,8 @@ async function init() {
 
   ensurePanelStyles();
   await loadSettings();
+
+  setupSelectionBubble();
 
   if (currentSettings.enablePageTranslation) {
     scheduleLanguageDetection(800);
@@ -146,20 +159,21 @@ function ensurePanelStyles() {
       gap: 12px;
       z-index: 2147483647;
       backdrop-filter: blur(12px);
-      transition: width 0.2s ease, height 0.2s ease, padding 0.2s ease, border-radius 0.2s ease;
+      transition: width 0.2s ease, height 0.2s ease, padding 0.2s ease, border-radius 0.2s ease,
+        box-shadow 0.2s ease;
     }
     #${PANEL_ID}[data-visible="true"] {
       display: flex;
     }
     #${PANEL_ID}[data-collapsed="true"] {
-      width: 56px;
-      height: 56px;
-      padding: 0;
-      border-radius: 28px;
+      width: 46px;
+      height: 46px;
+      padding: 4px;
+      border-radius: 26px;
       align-items: center;
       justify-content: center;
       gap: 0;
-      box-shadow: 0 12px 28px rgba(15, 23, 42, 0.35);
+      box-shadow: 0 12px 26px rgba(15, 23, 42, 0.3);
     }
     #${PANEL_ID} .panel-content {
       display: flex;
@@ -172,28 +186,42 @@ function ensurePanelStyles() {
     }
     #${PANEL_ID} .fab {
       display: none;
-      width: 48px;
-      height: 48px;
-      border-radius: 24px;
+      width: 100%;
+      height: 100%;
+      border-radius: 20px;
       border: none;
       background: linear-gradient(135deg, #38bdf8, #0ea5e9);
       color: #0f172a;
       align-items: center;
       justify-content: center;
       cursor: pointer;
-      box-shadow: 0 12px 26px rgba(14, 165, 233, 0.35);
+      box-shadow: inset 0 0 0 1px rgba(15, 23, 42, 0.1);
       transition: transform 0.15s ease, box-shadow 0.15s ease;
     }
     #${PANEL_ID} .fab:hover {
       transform: translateY(-1px);
-      box-shadow: 0 18px 32px rgba(14, 165, 233, 0.4);
+      box-shadow: inset 0 0 0 1px rgba(15, 23, 42, 0.2);
+    }
+    #${PANEL_ID} .fab-icon {
+      display: inline-flex;
+      width: 22px;
+      height: 22px;
+      align-items: center;
+      justify-content: center;
+      font-size: 16px;
+      font-weight: 700;
+      letter-spacing: 0.02em;
     }
     #${PANEL_ID} .fab svg {
-      width: 24px;
-      height: 24px;
+      width: 20px;
+      height: 20px;
     }
     #${PANEL_ID}[data-collapsed="true"] .fab {
       display: flex;
+    }
+    #${PANEL_ID}[data-collapsed="true"] .fab:focus-visible {
+      outline: 2px solid #f8fafc;
+      outline-offset: 2px;
     }
     #${PANEL_ID} .header {
       display: flex;
@@ -289,9 +317,258 @@ function ensurePanelStyles() {
       color: #94a3b8;
       margin: 4px 0 0;
     }
+    #${SELECTION_BUBBLE_ID} {
+      position: absolute;
+      z-index: 2147483647;
+      display: none;
+      align-items: center;
+      gap: 6px;
+      padding: 6px 8px;
+      border-radius: 18px;
+      background: rgba(15, 23, 42, 0.92);
+      box-shadow: 0 12px 24px rgba(15, 23, 42, 0.35);
+      color: #e2e8f0;
+      font-family: 'Segoe UI', system-ui, -apple-system, BlinkMacSystemFont, sans-serif;
+      font-size: 13px;
+      line-height: 1.2;
+    }
+    #${SELECTION_BUBBLE_ID}[data-visible="true"] {
+      display: inline-flex;
+    }
+    #${SELECTION_BUBBLE_ID} button {
+      border: none;
+      background: linear-gradient(135deg, #38bdf8, #0ea5e9);
+      color: #0f172a;
+      border-radius: 999px;
+      width: 32px;
+      height: 32px;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      font-weight: 700;
+      cursor: pointer;
+      transition: transform 0.15s ease, box-shadow 0.15s ease;
+    }
+    #${SELECTION_BUBBLE_ID} button:hover:not([disabled]) {
+      transform: translateY(-1px);
+      box-shadow: 0 10px 18px rgba(14, 165, 233, 0.3);
+    }
+    #${SELECTION_BUBBLE_ID} button[disabled] {
+      opacity: 0.65;
+      cursor: wait;
+      transform: none;
+      box-shadow: none;
+    }
+    #${SELECTION_BUBBLE_ID} .label {
+      white-space: nowrap;
+    }
   `;
 
   document.head.appendChild(style);
+}
+
+function setupSelectionBubble() {
+  if (selectionBubbleState.initialized) {
+    return;
+  }
+
+  selectionBubbleState.initialized = true;
+
+  document.addEventListener('selectionchange', handleSelectionChangeForBubble);
+  document.addEventListener(
+    'pointerdown',
+    (event) => {
+      if (isNodeInsideSelectionBubble(event.target)) {
+        return;
+      }
+      hideSelectionBubble();
+    },
+    true
+  );
+
+  document.addEventListener('keydown', (event) => {
+    if (event.key === 'Escape') {
+      hideSelectionBubble();
+    }
+  });
+}
+
+function ensureSelectionBubbleElements() {
+  if (selectionBubbleState.container) {
+    return selectionBubbleState;
+  }
+
+  const container = document.createElement('div');
+  container.id = SELECTION_BUBBLE_ID;
+  container.setAttribute(TRANSLATOR_DATA_ATTRIBUTE, 'true');
+  container.setAttribute('role', 'group');
+  container.setAttribute('aria-label', '划词翻译工具');
+
+  container.innerHTML = `
+    <button type="button" aria-label="翻译选中文本">
+      <span class="fab-icon" aria-hidden="true">译</span>
+    </button>
+    <span class="label">翻译选中文本</span>
+  `;
+
+  const button = container.querySelector('button');
+  button.addEventListener('click', handleSelectionBubbleTranslate);
+
+  document.body.appendChild(container);
+  container.dataset.visible = 'false';
+
+  selectionBubbleState.container = container;
+  selectionBubbleState.translateButton = button;
+
+  return selectionBubbleState;
+}
+
+function handleSelectionChangeForBubble() {
+  const selection = window.getSelection();
+  if (!selection || selection.rangeCount === 0 || selection.isCollapsed) {
+    hideSelectionBubble();
+    selectionBubbleState.currentSelection = '';
+    return;
+  }
+
+  const text = selection.toString().trim();
+
+  if (!text || text.length < 2) {
+    hideSelectionBubble();
+    selectionBubbleState.currentSelection = '';
+    return;
+  }
+
+  const anchorNode = selection.anchorNode;
+  const focusNode = selection.focusNode;
+  if (isInsideTranslatorElement(anchorNode) || isInsideTranslatorElement(focusNode)) {
+    hideSelectionBubble();
+    return;
+  }
+
+  selectionBubbleState.currentSelection = text.slice(0, 2000);
+
+  const range = selection.getRangeAt(0);
+  showSelectionBubble(range.getBoundingClientRect());
+}
+
+function showSelectionBubble(rect) {
+  const { container } = ensureSelectionBubbleElements();
+
+  if (selectionBubbleState.hideTimer) {
+    clearTimeout(selectionBubbleState.hideTimer);
+    selectionBubbleState.hideTimer = null;
+  }
+
+  container.style.visibility = 'hidden';
+  container.dataset.visible = 'true';
+
+  requestAnimationFrame(() => {
+    positionSelectionBubble(container, rect);
+    container.style.visibility = '';
+  });
+}
+
+function hideSelectionBubble(delay = 0) {
+  if (!selectionBubbleState.container) {
+    return;
+  }
+
+  if (delay > 0) {
+    if (selectionBubbleState.hideTimer) {
+      clearTimeout(selectionBubbleState.hideTimer);
+    }
+    selectionBubbleState.hideTimer = setTimeout(() => {
+      selectionBubbleState.container.dataset.visible = 'false';
+      selectionBubbleState.hideTimer = null;
+    }, delay);
+    return;
+  }
+
+  if (selectionBubbleState.hideTimer) {
+    clearTimeout(selectionBubbleState.hideTimer);
+    selectionBubbleState.hideTimer = null;
+  }
+  selectionBubbleState.container.dataset.visible = 'false';
+}
+
+function positionSelectionBubble(container, rect) {
+  const verticalOffset = 8;
+  const horizontalOffset = 0;
+
+  const containerRect = container.getBoundingClientRect();
+  const width = containerRect.width || container.offsetWidth || 0;
+  const height = containerRect.height || container.offsetHeight || 0;
+
+  const maxLeft = window.scrollX + window.innerWidth - width - 12;
+  const proposedLeft = window.scrollX + rect.left + horizontalOffset;
+  const left = Math.max(window.scrollX + 12, Math.min(proposedLeft, maxLeft));
+
+  let top = window.scrollY + rect.top - height - verticalOffset;
+  if (top < window.scrollY + 12) {
+    container.style.top = `${window.scrollY + rect.bottom + verticalOffset}px`;
+  } else {
+    container.style.top = `${top}px`;
+  }
+
+  container.style.left = `${left}px`;
+}
+
+async function handleSelectionBubbleTranslate(event) {
+  event.preventDefault();
+  event.stopPropagation();
+
+  const text = selectionBubbleState.currentSelection;
+  if (!text) {
+    createTranslationBubble('请选择需要翻译的文本。', 'error');
+    return;
+  }
+
+  const { translateButton } = ensureSelectionBubbleElements();
+  translateButton.disabled = true;
+  const previousLabel = translateButton.textContent;
+  translateButton.textContent = '…';
+
+  try {
+    const response = await requestTranslation(text);
+    if (!response?.success) {
+      createTranslationBubble(response?.error || '翻译失败，请稍后再试。', 'error');
+    } else {
+      createTranslationBubble(response.translation || '');
+    }
+  } catch (error) {
+    console.error('Selection translation failed', error);
+    createTranslationBubble('翻译失败，请检查接口配置。', 'error');
+  } finally {
+    translateButton.disabled = false;
+    translateButton.textContent = previousLabel;
+    hideSelectionBubble(SELECTION_BUBBLE_HIDE_DELAY);
+  }
+}
+
+function isNodeInsideSelectionBubble(node) {
+  if (!selectionBubbleState.container) {
+    return false;
+  }
+
+  if (!node) {
+    return false;
+  }
+
+  return selectionBubbleState.container.contains(node);
+}
+
+function isInsideTranslatorElement(node) {
+  let current = node;
+  while (current) {
+    if (current.nodeType === Node.ELEMENT_NODE) {
+      if (current.getAttribute && current.getAttribute(TRANSLATOR_DATA_ATTRIBUTE) === 'true') {
+        return true;
+      }
+    }
+    current = current.parentNode;
+  }
+  return false;
 }
 
 async function loadSettings() {
@@ -858,17 +1135,12 @@ function getFloatingPanelElements() {
   panel.setAttribute('role', 'dialog');
   panel.setAttribute('aria-live', 'polite');
   panel.setAttribute('aria-busy', 'false');
-  panel.dataset.collapsed = 'false';
-  panel.setAttribute('aria-expanded', 'true');
+  panel.dataset.collapsed = 'true';
+  panel.setAttribute('aria-expanded', 'false');
 
   panel.innerHTML = `
     <button type="button" class="fab" aria-label="展开翻译面板">
-      <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
-        <path
-          fill="currentColor"
-          d="M4 4h7v2H6.41l3.3 3.3-1.41 1.4L5 7.41V11H3V4zm9 0h8v2h-3.59l-2.7 2.7 1.41 1.4L20 7.41V11h2V4a1 1 0 0 0-1-1h-8zm6 9v7h-7v-2h3.59l-3.3-3.3 1.41-1.4L16 16.59V13zM4 13h2v3.59l2.7-2.7 1.41 1.4L7.41 18H11v2H4z"
-        />
-      </svg>
+      <span class="fab-icon" aria-hidden="true">译</span>
     </button>
     <div class="panel-content">
       <div class="header">
@@ -905,22 +1177,19 @@ function getFloatingPanelElements() {
   });
 
   fabButton.addEventListener('click', () => {
-    expandFloatingPanel({ userInitiated: true });
-    schedulePanelCollapse();
+    if (panel.dataset.collapsed === 'true') {
+      expandFloatingPanel({ userInitiated: true });
+      schedulePanelCollapse();
+    } else {
+      collapseFloatingPanel({ force: true });
+    }
   });
 
-  panel.addEventListener('mouseenter', () => {
+  panel.addEventListener('focusin', (event) => {
     cancelPanelCollapse();
-    expandFloatingPanel();
-  });
-
-  panel.addEventListener('mouseleave', () => {
-    schedulePanelCollapse();
-  });
-
-  panel.addEventListener('focusin', () => {
-    cancelPanelCollapse();
-    expandFloatingPanel();
+    if (event.target !== fabButton) {
+      expandFloatingPanel();
+    }
   });
 
   panel.addEventListener('focusout', () => {
@@ -942,14 +1211,18 @@ function getFloatingPanelElements() {
   return floatingPanelState;
 }
 
-function showFloatingPanel({ detectedLanguage, targetLanguage, status, tone = 'info' }) {
+function showFloatingPanel({ detectedLanguage, targetLanguage, status, tone = 'info', expand = false }) {
   const { panel } = getFloatingPanelElements();
   updateFloatingPanelLanguages(detectedLanguage, targetLanguage);
   updateFloatingPanelStatus(status, tone);
   panel.dataset.visible = 'true';
   panel.setAttribute('aria-hidden', 'false');
-  expandFloatingPanel();
-  schedulePanelCollapse();
+  if (expand) {
+    expandFloatingPanel({ userInitiated: true });
+    schedulePanelCollapse();
+  } else {
+    collapseFloatingPanel({ force: true });
+  }
 }
 
 function hideFloatingPanel() {
@@ -1003,10 +1276,14 @@ function expandFloatingPanel({ userInitiated = false } = {}) {
   }
 }
 
-function collapseFloatingPanel() {
-  if (!floatingPanelState.panel || translationInProgress) {
+function collapseFloatingPanel({ force = false } = {}) {
+  if (!floatingPanelState.panel) {
     return;
   }
+  if (translationInProgress && !force) {
+    return;
+  }
+  floatingPanelState.panel.dataset.visible = 'true';
   floatingPanelState.panel.dataset.collapsed = 'true';
   floatingPanelState.panel.setAttribute('aria-expanded', 'false');
 }
@@ -1045,7 +1322,8 @@ async function translateEntirePage({ forceShowPanel = false } = {}) {
       detectedLanguage: detectedPageLanguage || '未知',
       targetLanguage: currentSettings.targetLanguage || DEFAULT_SETTINGS.targetLanguage,
       status: '整页翻译功能已在设置中关闭，可在扩展选项中重新启用。',
-      tone: 'warning'
+      tone: 'warning',
+      expand: true
     });
     return;
   }
@@ -1056,7 +1334,8 @@ async function translateEntirePage({ forceShowPanel = false } = {}) {
       detectedLanguage: detectedPageLanguage || '未知',
       targetLanguage: currentSettings.targetLanguage || DEFAULT_SETTINGS.targetLanguage,
       status: '未找到可翻译的文本。',
-      tone: 'warning'
+      tone: 'warning',
+      expand: true
     });
     return;
   }
