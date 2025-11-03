@@ -31,7 +31,8 @@ p {
 }
 
 textarea,
-input[type="text"] {
+input[type="text"],
+select {
   width: 100%;
   border: 1px solid #334155;
   border-radius: 8px;
@@ -41,8 +42,13 @@ input[type="text"] {
   resize: vertical;
 }
 
+select {
+  appearance: none;
+}
+
 textarea:focus,
-input[type="text"]:focus {
+input[type="text"]:focus,
+select:focus {
   outline: 2px solid #38bdf8;
   outline-offset: 2px;
 }

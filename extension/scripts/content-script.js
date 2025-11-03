@@ -1,26 +1,39 @@
-const DEFAULT_SETTINGS = {
+const DEFAULT_GENERIC_TRANSLATION = {
   endpoint: '',
   apiKey: '',
-  sourceLanguage: 'auto',
-  targetLanguage: 'zh-CN',
   requestMethod: 'POST',
   promptTemplate: '请将以下文本从{{sourceLanguage}}翻译成{{targetLanguage}}：\n\n{{text}}',
   requestBodyTemplate:
     '{\n  "text": "{{text}}",\n  "prompt": "{{prompt}}",\n  "sourceLanguage": "{{sourceLanguage}}",\n  "targetLanguage": "{{targetLanguage}}"\n}',
   customHeaders: '{\n  "Authorization": "Bearer {{apiKey}}"\n}',
-  responsePath: 'translation',
-  detectionMode: 'simple',
-  detectionEndpoint: '',
-  detectionRequestMethod: 'POST',
-  detectionPromptTemplate:
-    '请判断以下文本的语言并仅返回语言代码（如 en、zh-CN）：\n\n{{text}}',
-  detectionRequestBodyTemplate: '{\n  "text": "{{text}}",\n  "prompt": "{{prompt}}"\n}',
-  detectionCustomHeaders: '{}',
-  detectionResponsePath: '',
+  responsePath: 'translation'
+};
+
+const DEFAULT_GENERIC_DETECTION = {
+  mode: 'simple',
+  endpoint: '',
+  requestMethod: 'POST',
+  promptTemplate: '请判断以下文本的语言并仅返回语言代码（如 en、zh-CN）：\n\n{{text}}',
+  requestBodyTemplate: '{\n  "text": "{{text}}",\n  "prompt": "{{prompt}}"\n}',
+  customHeaders: '{}',
+  responsePath: ''
+};
+
+const DEFAULT_PROFILES = [
+  createDefaultProfile('generic', '自定义 LLM 模板', 'profile-generic'),
+  createDefaultProfile('google', 'Google 翻译 API', 'profile-google'),
+  createDefaultProfile('baidu', '百度翻译 API', 'profile-baidu')
+];
+
+const DEFAULT_SETTINGS = {
+  sourceLanguage: 'auto',
+  targetLanguage: 'zh-CN',
   enablePageTranslation: true,
   autoDetectPageLanguage: true,
   autoShowFloatingPanel: true,
-  pageTranslationBatchSize: 8
+  pageTranslationBatchSize: 8,
+  activeProfileId: DEFAULT_PROFILES[0].id,
+  profiles: DEFAULT_PROFILES
 };
 
 const BUBBLE_ID = 'safe-page-translator-bubble';
@@ -29,7 +42,8 @@ const PANEL_STYLE_ID = 'safe-page-translator-style';
 const TRANSLATOR_DATA_ATTRIBUTE = 'data-safe-page-translator';
 
 const originalTextMap = new WeakMap();
-let currentSettings = { ...DEFAULT_SETTINGS };
+let currentSettings = deepClone(DEFAULT_SETTINGS);
+let currentProfile = currentSettings.profiles[0];
 let settingsLoaded = false;
 let detectedPageLanguage = '';
 let translationInProgress = false;
@@ -42,8 +56,12 @@ const floatingPanelState = {
   translateButton: null,
   placeholderButton: null,
   detectedLanguage: null,
-  targetLanguage: null
+  targetLanguage: null,
+  fab: null,
+  collapseTimer: null
 };
+
+const PANEL_COLLAPSE_DELAY = 5000;
 
 const SKIP_TAGS = new Set([
   'SCRIPT',
@@ -92,8 +110,7 @@ async function init() {
     if (areaName !== 'sync' || !changes.settings) {
       return;
     }
-    currentSettings = { ...DEFAULT_SETTINGS, ...changes.settings.newValue };
-    settingsLoaded = true;
+    applySettings(changes.settings.newValue);
 
     if (!currentSettings.enablePageTranslation) {
       hideFloatingPanel();
@@ -119,7 +136,7 @@ function ensurePanelStyles() {
       bottom: 24px;
       width: 288px;
       padding: 16px;
-      border-radius: 16px;
+      border-radius: 18px;
       background: rgba(15, 23, 42, 0.95);
       color: #f8fafc;
       font-family: 'Segoe UI', system-ui, -apple-system, BlinkMacSystemFont, sans-serif;
@@ -128,8 +145,54 @@ function ensurePanelStyles() {
       flex-direction: column;
       gap: 12px;
       z-index: 2147483647;
+      backdrop-filter: blur(12px);
+      transition: width 0.2s ease, height 0.2s ease, padding 0.2s ease, border-radius 0.2s ease;
     }
     #${PANEL_ID}[data-visible="true"] {
+      display: flex;
+    }
+    #${PANEL_ID}[data-collapsed="true"] {
+      width: 56px;
+      height: 56px;
+      padding: 0;
+      border-radius: 28px;
+      align-items: center;
+      justify-content: center;
+      gap: 0;
+      box-shadow: 0 12px 28px rgba(15, 23, 42, 0.35);
+    }
+    #${PANEL_ID} .panel-content {
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+      width: 100%;
+    }
+    #${PANEL_ID}[data-collapsed="true"] .panel-content {
+      display: none;
+    }
+    #${PANEL_ID} .fab {
+      display: none;
+      width: 48px;
+      height: 48px;
+      border-radius: 24px;
+      border: none;
+      background: linear-gradient(135deg, #38bdf8, #0ea5e9);
+      color: #0f172a;
+      align-items: center;
+      justify-content: center;
+      cursor: pointer;
+      box-shadow: 0 12px 26px rgba(14, 165, 233, 0.35);
+      transition: transform 0.15s ease, box-shadow 0.15s ease;
+    }
+    #${PANEL_ID} .fab:hover {
+      transform: translateY(-1px);
+      box-shadow: 0 18px 32px rgba(14, 165, 233, 0.4);
+    }
+    #${PANEL_ID} .fab svg {
+      width: 24px;
+      height: 24px;
+    }
+    #${PANEL_ID}[data-collapsed="true"] .fab {
       display: flex;
     }
     #${PANEL_ID} .header {
@@ -233,7 +296,14 @@ function ensurePanelStyles() {
 
 async function loadSettings() {
   const { settings } = await chrome.storage.sync.get('settings');
-  currentSettings = { ...DEFAULT_SETTINGS, ...settings };
+  applySettings(settings);
+}
+
+function applySettings(rawSettings) {
+  currentSettings = normalizeSettings(rawSettings);
+  currentProfile =
+    currentSettings.profiles.find((profile) => profile.id === currentSettings.activeProfileId) ||
+    currentSettings.profiles[0];
   settingsLoaded = true;
 }
 
@@ -322,13 +392,13 @@ async function runLanguageDetection() {
 
 async function detectLanguage(text) {
   await ensureSettingsLoaded();
-  const mode = currentSettings.detectionMode || 'simple';
+  const mode = getDetectionMode();
 
   if (mode === 'manual') {
     return normalizeLanguageCode(currentSettings.sourceLanguage || 'auto');
   }
 
-  if (mode === 'llm') {
+  if (mode === 'llm' || mode === 'provider') {
     const response = await chrome.runtime.sendMessage({
       type: 'detect-language',
       payload: { text: text.slice(0, 4000) }
@@ -500,7 +570,11 @@ function normalizeLanguageCode(code) {
   if (!code) {
     return 'auto';
   }
-  return String(code).trim();
+  const normalized = String(code).trim();
+  if (!normalized) {
+    return 'auto';
+  }
+  return normalized;
 }
 
 function languagesDiffer(a, b) {
@@ -568,6 +642,211 @@ function shouldSkipElement(element) {
   return false;
 }
 
+function normalizeSettings(rawSettings = {}) {
+  const migrated = migrateLegacySettings(rawSettings);
+  const clone = deepClone(DEFAULT_SETTINGS);
+
+  clone.sourceLanguage = migrated?.sourceLanguage || DEFAULT_SETTINGS.sourceLanguage;
+  clone.targetLanguage = migrated?.targetLanguage || DEFAULT_SETTINGS.targetLanguage;
+  clone.enablePageTranslation = Boolean(
+    migrated?.enablePageTranslation ?? DEFAULT_SETTINGS.enablePageTranslation
+  );
+  clone.autoDetectPageLanguage = Boolean(
+    migrated?.autoDetectPageLanguage ?? DEFAULT_SETTINGS.autoDetectPageLanguage
+  );
+  clone.autoShowFloatingPanel = Boolean(
+    migrated?.autoShowFloatingPanel ?? DEFAULT_SETTINGS.autoShowFloatingPanel
+  );
+  clone.pageTranslationBatchSize = Number(
+    migrated?.pageTranslationBatchSize ?? DEFAULT_SETTINGS.pageTranslationBatchSize
+  );
+
+  const profilesArray = Array.isArray(migrated?.profiles) && migrated.profiles.length > 0
+    ? migrated.profiles
+    : deepClone(DEFAULT_PROFILES);
+
+  clone.profiles = profilesArray.map((profile) => normalizeProfile(profile));
+
+  clone.activeProfileId = migrated?.activeProfileId;
+  if (!clone.profiles.find((profile) => profile.id === clone.activeProfileId)) {
+    clone.activeProfileId = clone.profiles[0].id;
+  }
+
+  return clone;
+}
+
+function normalizeProfile(profile) {
+  if (!profile || typeof profile !== 'object') {
+    return createDefaultProfile('generic');
+  }
+
+  if (profile.type === 'google') {
+    return {
+      id: profile.id || generateProfileId('google'),
+      name: profile.name || 'Google 翻译 API',
+      type: 'google',
+      translation: {
+        endpoint:
+          profile.translation?.endpoint || 'https://translation.googleapis.com/language/translate/v2',
+        apiKey: profile.translation?.apiKey || '',
+        format: profile.translation?.format === 'html' ? 'html' : 'text',
+        model: profile.translation?.model || ''
+      },
+      detection: {
+        mode: profile.detection?.mode === 'manual'
+          ? 'manual'
+          : profile.detection?.mode === 'simple'
+          ? 'simple'
+          : 'provider',
+        endpoint:
+          profile.detection?.endpoint || 'https://translation.googleapis.com/language/translate/v2/detect'
+      }
+    };
+  }
+
+  if (profile.type === 'baidu') {
+    return {
+      id: profile.id || generateProfileId('baidu'),
+      name: profile.name || '百度翻译 API',
+      type: 'baidu',
+      translation: {
+        endpoint:
+          profile.translation?.endpoint || 'https://fanyi-api.baidu.com/api/trans/vip/translate',
+        appId: profile.translation?.appId || '',
+        appSecret: profile.translation?.appSecret || '',
+        domain: profile.translation?.domain || 'general'
+      },
+      detection: {
+        mode: profile.detection?.mode === 'manual'
+          ? 'manual'
+          : profile.detection?.mode === 'simple'
+          ? 'simple'
+          : 'provider',
+        endpoint:
+          profile.detection?.endpoint || 'https://fanyi-api.baidu.com/api/trans/vip/language'
+      }
+    };
+  }
+
+  return {
+    id: profile.id || generateProfileId('generic'),
+    name: profile.name || '自定义 LLM 模板',
+    type: 'generic',
+    translation: {
+      ...deepClone(DEFAULT_GENERIC_TRANSLATION),
+      ...profile.translation
+    },
+    detection: {
+      ...deepClone(DEFAULT_GENERIC_DETECTION),
+      ...profile.detection
+    }
+  };
+}
+
+function migrateLegacySettings(rawSettings = {}) {
+  if (!rawSettings || typeof rawSettings !== 'object' || Array.isArray(rawSettings.profiles)) {
+    return rawSettings;
+  }
+
+  if (rawSettings.profiles) {
+    return rawSettings;
+  }
+
+  const migratedProfile = createDefaultProfile('generic', rawSettings.profileName || '已迁移模板');
+  migratedProfile.translation.endpoint = rawSettings.endpoint || '';
+  migratedProfile.translation.apiKey = rawSettings.apiKey || '';
+  migratedProfile.translation.requestMethod = rawSettings.requestMethod || 'POST';
+  migratedProfile.translation.promptTemplate =
+    rawSettings.promptTemplate || DEFAULT_GENERIC_TRANSLATION.promptTemplate;
+  migratedProfile.translation.requestBodyTemplate =
+    rawSettings.requestBodyTemplate || DEFAULT_GENERIC_TRANSLATION.requestBodyTemplate;
+  migratedProfile.translation.customHeaders = rawSettings.customHeaders || '{}';
+  migratedProfile.translation.responsePath =
+    rawSettings.responsePath || DEFAULT_GENERIC_TRANSLATION.responsePath;
+
+  migratedProfile.detection.mode = rawSettings.detectionMode || 'simple';
+  migratedProfile.detection.endpoint = rawSettings.detectionEndpoint || '';
+  migratedProfile.detection.requestMethod = rawSettings.detectionRequestMethod || 'POST';
+  migratedProfile.detection.promptTemplate =
+    rawSettings.detectionPromptTemplate || DEFAULT_GENERIC_DETECTION.promptTemplate;
+  migratedProfile.detection.requestBodyTemplate =
+    rawSettings.detectionRequestBodyTemplate || DEFAULT_GENERIC_DETECTION.requestBodyTemplate;
+  migratedProfile.detection.customHeaders = rawSettings.detectionCustomHeaders || '{}';
+  migratedProfile.detection.responsePath = rawSettings.detectionResponsePath || '';
+
+  return {
+    sourceLanguage: rawSettings.sourceLanguage || 'auto',
+    targetLanguage: rawSettings.targetLanguage || 'zh-CN',
+    enablePageTranslation:
+      rawSettings.enablePageTranslation ?? DEFAULT_SETTINGS.enablePageTranslation,
+    autoDetectPageLanguage:
+      rawSettings.autoDetectPageLanguage ?? DEFAULT_SETTINGS.autoDetectPageLanguage,
+    autoShowFloatingPanel:
+      rawSettings.autoShowFloatingPanel ?? DEFAULT_SETTINGS.autoShowFloatingPanel,
+    pageTranslationBatchSize:
+      rawSettings.pageTranslationBatchSize ?? DEFAULT_SETTINGS.pageTranslationBatchSize,
+    activeProfileId: migratedProfile.id,
+    profiles: [migratedProfile]
+  };
+}
+
+function createDefaultProfile(type, name, fixedId) {
+  if (type === 'google') {
+    return {
+      id: fixedId || generateProfileId(type),
+      name: name || 'Google 翻译 API',
+      type: 'google',
+      translation: {
+        endpoint: 'https://translation.googleapis.com/language/translate/v2',
+        apiKey: '',
+        format: 'text',
+        model: ''
+      },
+      detection: {
+        mode: 'provider',
+        endpoint: 'https://translation.googleapis.com/language/translate/v2/detect'
+      }
+    };
+  }
+
+  if (type === 'baidu') {
+    return {
+      id: fixedId || generateProfileId(type),
+      name: name || '百度翻译 API',
+      type: 'baidu',
+      translation: {
+        endpoint: 'https://fanyi-api.baidu.com/api/trans/vip/translate',
+        appId: '',
+        appSecret: '',
+        domain: 'general'
+      },
+      detection: {
+        mode: 'provider',
+        endpoint: 'https://fanyi-api.baidu.com/api/trans/vip/language'
+      }
+    };
+  }
+
+  return {
+    id: fixedId || generateProfileId(type),
+    name: name || '自定义 LLM 模板',
+    type: 'generic',
+    translation: deepClone(DEFAULT_GENERIC_TRANSLATION),
+    detection: deepClone(DEFAULT_GENERIC_DETECTION)
+  };
+}
+
+function generateProfileId(type) {
+  return `${type}-${Math.random().toString(36).slice(2, 10)}`;
+}
+
+function deepClone(value) {
+  if (typeof structuredClone === 'function') {
+    return structuredClone(value);
+  }
+  return JSON.parse(JSON.stringify(value));
+}
+
 function getFloatingPanelElements() {
   if (floatingPanelState.panel) {
     return floatingPanelState;
@@ -579,22 +858,34 @@ function getFloatingPanelElements() {
   panel.setAttribute('role', 'dialog');
   panel.setAttribute('aria-live', 'polite');
   panel.setAttribute('aria-busy', 'false');
+  panel.dataset.collapsed = 'false';
+  panel.setAttribute('aria-expanded', 'true');
 
   panel.innerHTML = `
-    <div class="header">
-      <span class="title">Safe Page Translator</span>
-      <button type="button" class="close-btn" aria-label="关闭翻译悬浮窗">×</button>
+    <button type="button" class="fab" aria-label="展开翻译面板">
+      <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+        <path
+          fill="currentColor"
+          d="M4 4h7v2H6.41l3.3 3.3-1.41 1.4L5 7.41V11H3V4zm9 0h8v2h-3.59l-2.7 2.7 1.41 1.4L20 7.41V11h2V4a1 1 0 0 0-1-1h-8zm6 9v7h-7v-2h3.59l-3.3-3.3 1.41-1.4L16 16.59V13zM4 13h2v3.59l2.7-2.7 1.41 1.4L7.41 18H11v2H4z"
+        />
+      </svg>
+    </button>
+    <div class="panel-content">
+      <div class="header">
+        <span class="title">Safe Page Translator</span>
+        <button type="button" class="close-btn" aria-label="关闭翻译悬浮窗">×</button>
+      </div>
+      <div class="status"></div>
+      <div class="languages">
+        <div class="language-chip"><strong>检测语言</strong><span class="detected">--</span></div>
+        <div class="language-chip"><strong>目标语言</strong><span class="target">--</span></div>
+      </div>
+      <div class="actions">
+        <button type="button" class="translate-button">翻译整页</button>
+        <button type="button" class="placeholder-button" title="更多功能即将上线" disabled>更多功能</button>
+      </div>
+      <p class="footer-hint">当网页以图片或自定义渲染文字时，请结合截图或 OCR 获得更准确的翻译。</p>
     </div>
-    <div class="status"></div>
-    <div class="languages">
-      <div class="language-chip"><strong>检测语言</strong><span class="detected">--</span></div>
-      <div class="language-chip"><strong>目标语言</strong><span class="target">--</span></div>
-    </div>
-    <div class="actions">
-      <button type="button" class="translate-button">翻译整页</button>
-      <button type="button" class="placeholder-button" title="更多功能即将上线" disabled>更多功能</button>
-    </div>
-    <p class="footer-hint">当网页以图片或自定义渲染文字时，请结合截图或 OCR 获得更准确的翻译。</p>
   `;
 
   const status = panel.querySelector('.status');
@@ -603,6 +894,7 @@ function getFloatingPanelElements() {
   const detectedElement = panel.querySelector('.detected');
   const targetElement = panel.querySelector('.target');
   const closeButton = panel.querySelector('.close-btn');
+  const fabButton = panel.querySelector('.fab');
 
   translateButton.addEventListener('click', () => {
     translateEntirePage({ forceShowPanel: true });
@@ -610,6 +902,31 @@ function getFloatingPanelElements() {
 
   closeButton.addEventListener('click', () => {
     hideFloatingPanel();
+  });
+
+  fabButton.addEventListener('click', () => {
+    expandFloatingPanel({ userInitiated: true });
+    schedulePanelCollapse();
+  });
+
+  panel.addEventListener('mouseenter', () => {
+    cancelPanelCollapse();
+    expandFloatingPanel();
+  });
+
+  panel.addEventListener('mouseleave', () => {
+    schedulePanelCollapse();
+  });
+
+  panel.addEventListener('focusin', () => {
+    cancelPanelCollapse();
+    expandFloatingPanel();
+  });
+
+  panel.addEventListener('focusout', () => {
+    if (!panel.contains(document.activeElement)) {
+      schedulePanelCollapse();
+    }
   });
 
   document.body.appendChild(panel);
@@ -620,6 +937,7 @@ function getFloatingPanelElements() {
   floatingPanelState.placeholderButton = placeholderButton;
   floatingPanelState.detectedLanguage = detectedElement;
   floatingPanelState.targetLanguage = targetElement;
+  floatingPanelState.fab = fabButton;
 
   return floatingPanelState;
 }
@@ -630,14 +948,19 @@ function showFloatingPanel({ detectedLanguage, targetLanguage, status, tone = 'i
   updateFloatingPanelStatus(status, tone);
   panel.dataset.visible = 'true';
   panel.setAttribute('aria-hidden', 'false');
+  expandFloatingPanel();
+  schedulePanelCollapse();
 }
 
 function hideFloatingPanel() {
   if (!floatingPanelState.panel) {
     return;
   }
+  cancelPanelCollapse();
+  floatingPanelState.panel.dataset.collapsed = 'false';
   floatingPanelState.panel.dataset.visible = 'false';
   floatingPanelState.panel.setAttribute('aria-hidden', 'true');
+  floatingPanelState.panel.setAttribute('aria-expanded', 'false');
 }
 
 function updateFloatingPanelStatus(text, tone = 'info') {
@@ -650,6 +973,68 @@ function updateFloatingPanelLanguages(detectedLanguage, targetLanguage) {
   const { detectedLanguage: detectedElement, targetLanguage: targetElement } = getFloatingPanelElements();
   detectedElement.textContent = detectedLanguage || '--';
   targetElement.textContent = targetLanguage || '--';
+}
+
+function getDetectionMode() {
+  if (!currentProfile) {
+    return 'simple';
+  }
+
+  if (currentProfile.type === 'generic') {
+    return currentProfile.detection?.mode || 'simple';
+  }
+
+  if (currentProfile.type === 'google' || currentProfile.type === 'baidu') {
+    return currentProfile.detection?.mode || 'provider';
+  }
+
+  return 'simple';
+}
+
+function expandFloatingPanel({ userInitiated = false } = {}) {
+  if (!floatingPanelState.panel) {
+    return;
+  }
+  floatingPanelState.panel.dataset.collapsed = 'false';
+  floatingPanelState.panel.setAttribute('aria-expanded', 'true');
+  if (userInitiated) {
+    floatingPanelState.panel.dataset.visible = 'true';
+    floatingPanelState.panel.setAttribute('aria-hidden', 'false');
+  }
+}
+
+function collapseFloatingPanel() {
+  if (!floatingPanelState.panel || translationInProgress) {
+    return;
+  }
+  floatingPanelState.panel.dataset.collapsed = 'true';
+  floatingPanelState.panel.setAttribute('aria-expanded', 'false');
+}
+
+function schedulePanelCollapse(delay = PANEL_COLLAPSE_DELAY) {
+  const { panel } = getFloatingPanelElements();
+  cancelPanelCollapse();
+  if (!panel || panel.dataset.visible !== 'true' || translationInProgress) {
+    return;
+  }
+
+  const timeout = Math.max(2000, delay);
+  floatingPanelState.collapseTimer = setTimeout(() => {
+    if (
+      floatingPanelState.panel &&
+      floatingPanelState.panel.dataset.visible === 'true' &&
+      !translationInProgress
+    ) {
+      collapseFloatingPanel();
+    }
+  }, timeout);
+}
+
+function cancelPanelCollapse() {
+  if (floatingPanelState.collapseTimer) {
+    clearTimeout(floatingPanelState.collapseTimer);
+    floatingPanelState.collapseTimer = null;
+  }
 }
 
 async function translateEntirePage({ forceShowPanel = false } = {}) {
@@ -681,6 +1066,9 @@ async function translateEntirePage({ forceShowPanel = false } = {}) {
     panel.dataset.visible = 'true';
     panel.setAttribute('aria-hidden', 'false');
   }
+
+  expandFloatingPanel({ userInitiated: true });
+  cancelPanelCollapse();
 
   const targetLanguage = currentSettings.targetLanguage || DEFAULT_SETTINGS.targetLanguage;
   const sourceLanguage = detectedPageLanguage || currentSettings.sourceLanguage || DEFAULT_SETTINGS.sourceLanguage;
@@ -735,6 +1123,7 @@ async function translateEntirePage({ forceShowPanel = false } = {}) {
     translationInProgress = false;
     translateButton.disabled = false;
     panel.setAttribute('aria-busy', 'false');
+    schedulePanelCollapse(6000);
   }
 }
 
