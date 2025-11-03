@@ -1,0 +1,274 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <title>Safe Page Translator 设置</title>
+    <link rel="stylesheet" href="options.css" />
+  </head>
+  <body>
+    <main>
+      <h1>Safe Page Translator 设置</h1>
+      <p>
+        配置多个翻译模板（如自定义 LLM、Google 翻译、百度翻译），根据当前需求切换使用。所有配置仅保存在浏览器的同步存储中。
+      </p>
+      <form id="settings-form">
+        <section class="section">
+          <h2>全局默认语言</h2>
+          <div class="grid two-columns">
+            <label class="field">
+              <span>默认源语言</span>
+              <input type="text" id="source-language" placeholder="auto" />
+            </label>
+            <label class="field">
+              <span>默认目标语言</span>
+              <input type="text" id="target-language" placeholder="zh-CN" />
+            </label>
+          </div>
+          <p class="hint">用于弹窗快速翻译及整页翻译的初始语言，可随时在弹窗修改目标语言。</p>
+        </section>
+
+        <section class="section">
+          <h2>模板选择与管理</h2>
+          <div class="grid two-columns">
+            <label class="field">
+              <span>当前模板</span>
+              <select id="profile-select"></select>
+            </label>
+            <label class="field">
+              <span>模板名称</span>
+              <input type="text" id="profile-name" placeholder="例如：公司内部翻译" />
+            </label>
+            <label class="field">
+              <span>模板类型</span>
+              <select id="profile-type">
+                <option value="generic">自定义 LLM / 通用接口</option>
+                <option value="google">Google 翻译 API</option>
+                <option value="baidu">百度翻译 API</option>
+              </select>
+            </label>
+          </div>
+          <div class="profile-actions">
+            <button type="button" id="add-profile">新增模板</button>
+            <button type="button" id="duplicate-profile">复制当前模板</button>
+            <button type="button" id="remove-profile" class="danger">删除当前模板</button>
+          </div>
+          <p class="hint">
+            可以为不同翻译供应商或提示词创建独立模板，弹窗与整页翻译会使用选中的模板。删除模板不会影响其他模板的设置。
+          </p>
+        </section>
+
+        <section class="section" data-profile-section="generic">
+          <h2>自定义接口模板</h2>
+          <div class="grid two-columns">
+            <label class="field">
+              <span>接口地址</span>
+              <input type="url" id="endpoint" placeholder="https://example.com/translate" />
+            </label>
+            <label class="field">
+              <span>API Key（可选）</span>
+              <input type="password" id="api-key" placeholder="仅存储在本地" />
+            </label>
+            <label class="field">
+              <span>请求方法</span>
+              <select id="request-method">
+                <option value="POST">POST</option>
+                <option value="GET">GET</option>
+              </select>
+            </label>
+            <label class="field">
+              <span>响应结果路径</span>
+              <input type="text" id="response-path" placeholder="translation 或 choices.0.message.content" />
+            </label>
+          </div>
+          <label class="field">
+            <span>Prompt 模板</span>
+            <textarea
+              id="prompt-template"
+              rows="5"
+              placeholder="请将以下文本从{{sourceLanguage}}翻译成{{targetLanguage}}：\n\n{{text}}"
+            ></textarea>
+            <p class="hint">
+              使用 <code>{{text}}</code>、<code>{{sourceLanguage}}</code>、<code>{{targetLanguage}}</code> 等变量构建发给 LLM 的提示词。
+            </p>
+          </label>
+          <label class="field">
+            <span>请求体模板（JSON）</span>
+            <textarea
+              id="request-body-template"
+              rows="8"
+              placeholder='{"model":"gpt-4o-mini","messages":[{"role":"system","content":"{{prompt}}"}]}'
+            ></textarea>
+            <p class="hint">
+              模板会在发送前渲染变量并转换为 JSON；常用变量包括 <code>{{prompt}}</code>、<code>{{text}}</code>、<code>{{apiKey}}</code>。
+            </p>
+          </label>
+          <label class="field">
+            <span>自定义请求头（JSON，可选）</span>
+            <textarea
+              id="custom-headers"
+              rows="4"
+              placeholder='{"Authorization":"Bearer {{apiKey}}"}'
+            ></textarea>
+          </label>
+          <fieldset class="group">
+            <legend>语言识别（自定义模板）</legend>
+            <label class="field">
+              <span>识别模式</span>
+              <select id="detection-mode">
+                <option value="simple">自动检测（字符统计）</option>
+                <option value="llm">调用模板接口识别语言</option>
+                <option value="manual">手动（使用默认源语言）</option>
+              </select>
+            </label>
+            <div class="grid two-columns" data-detection-template>
+              <label class="field">
+                <span>语言识别接口地址（可选）</span>
+                <input type="url" id="detection-endpoint" placeholder="留空则复用翻译接口" />
+              </label>
+              <label class="field">
+                <span>识别请求方法</span>
+                <select id="detection-request-method">
+                  <option value="POST">POST</option>
+                  <option value="GET">GET</option>
+                </select>
+              </label>
+            </div>
+            <label class="field" data-detection-template>
+              <span>语言识别 Prompt 模板</span>
+              <textarea
+                id="detection-prompt-template"
+                rows="4"
+                placeholder="请判断以下文本的语言并仅返回语言代码（如 en、zh-CN）：\n\n{{text}}"
+              ></textarea>
+            </label>
+            <label class="field" data-detection-template>
+              <span>语言识别请求体模板（JSON）</span>
+              <textarea
+                id="detection-request-body-template"
+                rows="6"
+                placeholder='{"text":"{{text}}","prompt":"{{prompt}}"}'
+              ></textarea>
+            </label>
+            <label class="field" data-detection-template>
+              <span>语言识别请求头（JSON，可选）</span>
+              <textarea
+                id="detection-custom-headers"
+                rows="4"
+                placeholder='{"Authorization":"Bearer {{apiKey}}"}'
+              ></textarea>
+            </label>
+            <label class="field" data-detection-template>
+              <span>语言识别响应路径</span>
+              <input type="text" id="detection-response-path" placeholder="language 或 data.language" />
+            </label>
+          </fieldset>
+        </section>
+
+        <section class="section" data-profile-section="google">
+          <h2>Google 翻译 API</h2>
+          <div class="grid two-columns">
+            <label class="field">
+              <span>接口地址</span>
+              <input type="url" id="google-endpoint" placeholder="https://translation.googleapis.com/language/translate/v2" />
+            </label>
+            <label class="field">
+              <span>API Key</span>
+              <input type="text" id="google-api-key" placeholder="在 Google Cloud Console 申请" />
+            </label>
+            <label class="field">
+              <span>请求格式</span>
+              <select id="google-format">
+                <option value="text">纯文本</option>
+                <option value="html">HTML</option>
+              </select>
+            </label>
+            <label class="field">
+              <span>模型（可选）</span>
+              <input type="text" id="google-model" placeholder="nmt" />
+            </label>
+          </div>
+          <fieldset class="group">
+            <legend>语言识别</legend>
+            <p class="hint">Google 翻译自带语言识别接口，可选择是否启用自动检测。</p>
+            <label class="field">
+              <span>识别模式</span>
+              <select id="google-detection-mode">
+                <option value="provider">使用 Google 接口自动识别</option>
+                <option value="simple">简单统计识别</option>
+                <option value="manual">手动（使用默认源语言）</option>
+              </select>
+            </label>
+            <label class="field" data-google-detect>
+              <span>识别接口地址</span>
+              <input type="url" id="google-detection-endpoint" placeholder="https://translation.googleapis.com/language/translate/v2/detect" />
+            </label>
+          </fieldset>
+        </section>
+
+        <section class="section" data-profile-section="baidu">
+          <h2>百度翻译 API</h2>
+          <div class="grid two-columns">
+            <label class="field">
+              <span>接口地址</span>
+              <input type="url" id="baidu-endpoint" placeholder="https://fanyi-api.baidu.com/api/trans/vip/translate" />
+            </label>
+            <label class="field">
+              <span>APP ID</span>
+              <input type="text" id="baidu-app-id" placeholder="百度翻译开放平台 AppID" />
+            </label>
+            <label class="field">
+              <span>密钥</span>
+              <input type="password" id="baidu-app-secret" placeholder="百度翻译开放平台密钥" />
+            </label>
+            <label class="field">
+              <span>领域（可选）</span>
+              <input type="text" id="baidu-domain" placeholder="general" />
+            </label>
+          </div>
+          <fieldset class="group">
+            <legend>语言识别</legend>
+            <p class="hint">百度翻译支持语言检测接口，需使用同一套凭证。</p>
+            <label class="field">
+              <span>识别模式</span>
+              <select id="baidu-detection-mode">
+                <option value="provider">使用百度接口自动识别</option>
+                <option value="simple">简单统计识别</option>
+                <option value="manual">手动（使用默认源语言）</option>
+              </select>
+            </label>
+            <label class="field" data-baidu-detect>
+              <span>识别接口地址</span>
+              <input type="url" id="baidu-detection-endpoint" placeholder="https://fanyi-api.baidu.com/api/trans/vip/language" />
+            </label>
+          </fieldset>
+        </section>
+
+        <section class="section">
+          <h2>整页翻译行为</h2>
+          <label class="field checkbox">
+            <input type="checkbox" id="enable-page-translation" />
+            <span>启用整页翻译功能</span>
+          </label>
+          <label class="field checkbox">
+            <input type="checkbox" id="auto-detect-page-language" />
+            <span>自动检测页面语言</span>
+          </label>
+          <label class="field checkbox">
+            <input type="checkbox" id="auto-show-floating-panel" />
+            <span>语言不匹配时自动显示悬浮窗菜单</span>
+          </label>
+          <label class="field">
+            <span>整页翻译批量大小</span>
+            <input type="number" id="page-translation-batch-size" min="1" max="30" />
+            <p class="hint">一次请求包含的文本块数量，数值越大并发越低但单次请求更长。</p>
+          </label>
+        </section>
+
+        <button type="submit" class="primary">保存设置</button>
+      </form>
+      <p class="hint">设置会保存在浏览器的同步存储中，不会上传到其他地方。</p>
+      <div id="status" role="status" aria-live="polite"></div>
+    </main>
+    <script src="options.js"></script>
+  </body>
+</html>

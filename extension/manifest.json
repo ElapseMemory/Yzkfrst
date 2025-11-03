@@ -1,0 +1,30 @@
+{
+  "manifest_version": 3,
+  "name": "Safe Page Translator",
+  "description": "Custom translation extension for Chromium-based browsers with user-controlled translation services.",
+  "version": "0.1.0",
+  "action": {
+    "default_title": "Safe Page Translator",
+    "default_popup": "popup.html"
+  },
+  "permissions": [
+    "storage",
+    "contextMenus",
+    "scripting",
+    "activeTab"
+  ],
+  "host_permissions": [
+    "<all_urls>"
+  ],
+  "background": {
+    "service_worker": "scripts/background.js"
+  },
+  "content_scripts": [
+    {
+      "matches": ["<all_urls>"],
+      "js": ["scripts/content-script.js"],
+      "run_at": "document_idle"
+    }
+  ],
+  "options_page": "options.html"
+}
